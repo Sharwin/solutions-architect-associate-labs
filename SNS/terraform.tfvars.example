@@ -1,0 +1,4 @@
+aws_region     = "us-east-1"
+email_endpoint = "your-email@example.com"
+sms_endpoint   = "+1234567890"
+
