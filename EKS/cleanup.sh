@@ -1,11 +1,11 @@
 #!/bin/bash
-# EKS Lab Cleanup Script
+# EKS Lab Cleanup Script (CloudFormation Edition)
 # This script ensures proper cleanup order to avoid resource dependencies
 
 set -e
 
 echo "=========================================="
-echo "EKS Lab Cleanup Script"
+echo "EKS Lab Cleanup Script (CloudFormation)"
 echo "=========================================="
 echo ""
 
@@ -36,15 +36,6 @@ if check_kubectl; then
         echo "  - WordPress namespace not found (already deleted)"
     fi
     
-    # Delete demo-app namespace
-    if kubectl get namespace demo-app &>/dev/null; then
-        echo "  - Deleting demo-app namespace..."
-        kubectl delete namespace demo-app --wait=true --timeout=120s || true
-        echo "  ✓ demo-app namespace deleted"
-    else
-        echo "  - demo-app namespace not found (already deleted)"
-    fi
-    
     # Wait for LoadBalancers to be deleted (they take time)
     echo "  - Waiting for LoadBalancers to be deleted..."
     sleep 30
@@ -52,49 +43,25 @@ else
     echo -e "${YELLOW}  Skipping Kubernetes cleanup (kubectl not configured)${NC}"
 fi
 
-# Step 2: Delete EBS CSI Driver (optional, but good practice)
+# Step 2: Delete CloudFormation Stack
 echo ""
-echo -e "${GREEN}Step 2: Cleaning up EBS CSI Driver...${NC}"
-if check_kubectl; then
-    if kubectl get deployment ebs-csi-controller -n kube-system &>/dev/null; then
-        echo "  - Deleting EBS CSI Driver..."
-        kubectl delete -k "https://github.com/kubernetes-sigs/aws-ebs-csi-driver/deploy/kubernetes/overlays/stable/?ref=release-1.28" --ignore-not-found=true || true
-        echo "  ✓ EBS CSI Driver deleted"
-    else
-        echo "  - EBS CSI Driver not found (already deleted)"
-    fi
-else
-    echo -e "${YELLOW}  Skipping EBS CSI Driver cleanup${NC}"
-fi
+echo -e "${GREEN}Step 2: Deleting CloudFormation Stack...${NC}"
+STACK_NAME="eks-wordpress-lab"
 
-# Step 3: Delete EBS CSI IAM Role (if created)
-echo ""
-echo -e "${GREEN}Step 3: Cleaning up EBS CSI IAM Role...${NC}"
-if aws iam get-role --role-name AmazonEKS_EBS_CSI_DriverRole &>/dev/null; then
-    echo "  - Deleting IAM role policies..."
-    aws iam delete-role-policy --role-name AmazonEKS_EBS_CSI_DriverRole --policy-name EBS-CSI-Driver-Policy 2>/dev/null || true
+if aws cloudformation describe-stacks --stack-name $STACK_NAME &>/dev/null; then
+    echo "  - Deleting stack $STACK_NAME..."
+    aws cloudformation delete-stack --stack-name $STACK_NAME
     
-    echo "  - Deleting IAM role..."
-    aws iam delete-role --role-name AmazonEKS_EBS_CSI_DriverRole 2>/dev/null || true
-    echo "  ✓ EBS CSI IAM Role deleted"
+    echo "  - Waiting for stack deletion (this may take 10-15 minutes)..."
+    aws cloudformation wait stack-delete-complete --stack-name $STACK_NAME
+    echo "  ✓ CloudFormation stack deleted"
 else
-    echo "  - EBS CSI IAM Role not found (already deleted)"
+    echo -e "${YELLOW}  Stack $STACK_NAME not found (already deleted)${NC}"
 fi
 
-# Step 4: Destroy Terraform Infrastructure
+# Step 3: Verify cleanup
 echo ""
-echo -e "${GREEN}Step 4: Destroying Terraform infrastructure...${NC}"
-if [ -f "terraform.tfstate" ] || [ -f ".terraform/terraform.tfstate" ]; then
-    echo "  - Running terraform destroy..."
-    terraform destroy -auto-approve
-    echo "  ✓ Terraform infrastructure destroyed"
-else
-    echo -e "${YELLOW}  No Terraform state found (already destroyed)${NC}"
-fi
-
-# Step 5: Verify cleanup
-echo ""
-echo -e "${GREEN}Step 5: Verifying cleanup...${NC}"
+echo -e "${GREEN}Step 3: Verifying cleanup...${NC}"
 if check_kubectl; then
     echo "  - Checking for remaining LoadBalancers..."
     REMAINING_LB=$(kubectl get svc --all-namespaces -o json 2>/dev/null | jq -r '.items[] | select(.spec.type=="LoadBalancer") | "\(.metadata.namespace)/\(.metadata.name)"' 2>/dev/null | wc -l || echo "0")
@@ -115,4 +82,3 @@ echo "==========================================${NC}"
 echo ""
 echo "Note: It may take a few minutes for AWS to fully delete all resources."
 echo "Check AWS Console to verify all resources are deleted."
-

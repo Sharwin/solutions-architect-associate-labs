@@ -1,0 +1,45 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Amplify Console Lab Infrastructure
+
+Resources:
+  AmplifyApp:
+    Type: AWS::Amplify::App
+    Properties:
+      Name: techcorp-landing-page
+      BuildSpec: |
+        version: 1
+        frontend:
+          phases:
+            build:
+              commands: []
+          artifacts:
+            baseDirectory: /
+            files:
+              - '**/*'
+          cache:
+            paths: []
+
+  AmplifyBranch:
+    Type: AWS::Amplify::Branch
+    Properties:
+      AppId: !GetAtt AmplifyApp.AppId
+      BranchName: main
+      Framework: Web
+      Stage: PRODUCTION
+
+Outputs:
+  AmplifyAppId:
+    Value: !GetAtt AmplifyApp.AppId
+    Description: The ID of the Amplify App
+  
+  AmplifyBranchName:
+    Value: !GetAtt AmplifyBranch.BranchName
+    Description: The name of the Amplify Branch
+
+  AmplifyDefaultDomain:
+    Value: !Sub "https://${AmplifyBranch.BranchName}.${AmplifyApp.DefaultDomain}"
+    Description: The default domain of the Amplify App
+
+  AwsRegion:
+    Value: !Ref "AWS::Region"
+    Description: The AWS Region

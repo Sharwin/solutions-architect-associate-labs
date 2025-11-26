@@ -1,0 +1,216 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: SNS Lab Infrastructure
+
+Parameters:
+  EmailEndpoint:
+    Type: String
+    Description: Email address for SNS email subscription
+    Default: your-email@example.com
+  SmsEndpoint:
+    Type: String
+    Description: Phone number for SNS SMS subscription
+    Default: "+1234567890"
+
+Resources:
+  # SNS Topic
+  OrderNotificationsTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: ecommerce-order-notifications
+      DisplayName: E-Commerce Order Notifications
+      Tags:
+        - Key: Environment
+          Value: Lab
+        - Key: Purpose
+          Value: SNS-Education
+
+  # SQS Queue
+  WarehouseQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: warehouse-order-processing
+      VisibilityTimeout: 30
+      MessageRetentionPeriod: 345600 # 4 days
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt WarehouseDLQ.Arn
+        maxReceiveCount: 3
+      Tags:
+        - Key: Environment
+          Value: Lab
+        - Key: Purpose
+          Value: SNS-Education
+
+  # Dead Letter Queue
+  WarehouseDLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: warehouse-order-processing-dlq
+      MessageRetentionPeriod: 1209600 # 14 days
+      Tags:
+        - Key: Environment
+          Value: Lab
+        - Key: Purpose
+          Value: SNS-Education
+
+  # SQS Queue Policy
+  WarehouseQueuePolicy:
+    Type: AWS::SQS::QueuePolicy
+    Properties:
+      Queues:
+        - !Ref WarehouseQueue
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: sns.amazonaws.com
+            Action: sqs:SendMessage
+            Resource: !GetAtt WarehouseQueue.Arn
+            Condition:
+              ArnEquals:
+                aws:SourceArn: !Ref OrderNotificationsTopic
+
+  # Lambda Execution Role
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: sns-lambda-execution-role
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: sns-lambda-policy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: arn:aws:logs:*:*:*
+      Tags:
+        - Key: Environment
+          Value: Lab
+        - Key: Purpose
+          Value: SNS-Education
+
+  # Lambda Function
+  AnalyticsProcessorFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: sns-analytics-processor
+      Handler: index.lambda_handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Runtime: python3.11
+      Code:
+        ZipFile: |
+          import json
+          import logging
+
+          logger = logging.getLogger()
+          logger.setLevel(logging.INFO)
+
+          def lambda_handler(event, context):
+              """
+              Lambda function to process analytics messages from SNS
+              """
+              logger.info(f"Received event: {json.dumps(event)}")
+              
+              # Process SNS records
+              for record in event.get('Records', []):
+                  if record.get('EventSource') == 'aws:sns':
+                      sns_message = json.loads(record['Sns']['Message'])
+                      logger.info(f"Processing analytics message: {sns_message}")
+                      
+                      # Simulate analytics processing
+                      order_id = sns_message.get('order_id', 'N/A')
+                      customer_id = sns_message.get('customer_id', 'N/A')
+                      order_value = sns_message.get('order_value', 0)
+                      
+                      logger.info(f"Analytics processed - Order ID: {order_id}, Customer: {customer_id}, Value: ${order_value}")
+              
+              return {
+                  'statusCode': 200,
+                  'body': json.dumps('Analytics processing completed successfully')
+              }
+      Tags:
+        - Key: Environment
+          Value: Lab
+        - Key: Purpose
+          Value: SNS-Education
+
+  # Lambda Log Group
+  LambdaLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${AnalyticsProcessorFunction}"
+      RetentionInDays: 7
+      Tags:
+        - Key: Environment
+          Value: Lab
+        - Key: Purpose
+          Value: SNS-Education
+
+  # Lambda Permission for SNS
+  LambdaInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref AnalyticsProcessorFunction
+      Principal: sns.amazonaws.com
+      SourceArn: !Ref OrderNotificationsTopic
+
+  # SNS Subscriptions
+  EmailSubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      TopicArn: !Ref OrderNotificationsTopic
+      Protocol: email
+      Endpoint: !Ref EmailEndpoint
+      FilterPolicy:
+        message_type:
+          - order_confirmation
+
+  SmsSubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      TopicArn: !Ref OrderNotificationsTopic
+      Protocol: sms
+      Endpoint: !Ref SmsEndpoint
+      FilterPolicy:
+        message_type:
+          - order_tracking
+
+  SqsSubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      TopicArn: !Ref OrderNotificationsTopic
+      Protocol: sqs
+      Endpoint: !GetAtt WarehouseQueue.Arn
+      FilterPolicy:
+        message_type:
+          - warehouse_processing
+
+  LambdaSubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      TopicArn: !Ref OrderNotificationsTopic
+      Protocol: lambda
+      Endpoint: !GetAtt AnalyticsProcessorFunction.Arn
+      FilterPolicy:
+        message_type:
+          - analytics
+
+Outputs:
+  SnsTopicArn:
+    Description: ARN of the SNS Topic
+    Value: !Ref OrderNotificationsTopic
+  
+  WarehouseQueueUrl:
+    Description: URL of the Warehouse Queue
+    Value: !Ref WarehouseQueue

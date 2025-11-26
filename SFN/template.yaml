@@ -1,0 +1,185 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'AWS Step Functions Lab Infrastructure'
+
+Resources:
+  # --- IAM Role for Lambdas ---
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: sfn_lab_lambda_role_cfn
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+
+  # --- Lambda Functions ---
+  ValidateFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: sfn-lab-validate-cfn
+      Handler: index.lambda_handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Runtime: python3.9
+      Code:
+        ZipFile: |
+          import json
+
+          class OrderValidationError(Exception):
+              pass
+
+          def lambda_handler(event, context):
+              print(f"Validating order: {json.dumps(event)}")
+              
+              # Basic validation
+              if 'order_id' not in event:
+                  raise OrderValidationError("Missing order_id")
+              if 'customer_id' not in event:
+                  raise OrderValidationError("Missing customer_id")
+              if 'amount' not in event or event['amount'] <= 0:
+                  raise OrderValidationError("Invalid amount")
+                  
+              # Pass through data
+              return {
+                  'order_id': event['order_id'],
+                  'customer_id': event['customer_id'],
+                  'amount': event['amount'],
+                  'status': 'validated'
+              }
+
+  InventoryFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: sfn-lab-inventory-cfn
+      Handler: index.lambda_handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Runtime: python3.9
+      Code:
+        ZipFile: |
+          import json
+          import random
+
+          def lambda_handler(event, context):
+              print(f"Checking inventory for order: {event['order_id']}")
+              
+              # Simulate inventory check
+              # In a real scenario, this would check DynamoDB
+              
+              # Simulate random out of stock (10% chance) for educational purposes? 
+              # Let's keep it simple for now and assume success unless we want to demo error handling specifically.
+              
+              return {
+                  'order_id': event['order_id'],
+                  'customer_id': event['customer_id'],
+                  'amount': event['amount'],
+                  'status': 'inventory_confirmed'
+              }
+
+  PaymentFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: sfn-lab-payment-cfn
+      Handler: index.lambda_handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Runtime: python3.9
+      Code:
+        ZipFile: |
+          import json
+
+          def lambda_handler(event, context):
+              print(f"Processing payment for order: {event['order_id']} Amount: {event['amount']}")
+              
+              # Simulate payment processing
+              
+              return {
+                  'order_id': event['order_id'],
+                  'customer_id': event['customer_id'],
+                  'amount': event['amount'],
+                  'status': 'payment_processed',
+                  'transaction_id': 'tx-12345-67890'
+              }
+
+  # --- IAM Role for Step Functions ---
+  StepFunctionsRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: sfn_lab_role_cfn
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: states.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: sfn_lab_policy_cfn
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - lambda:InvokeFunction
+                Resource:
+                  - !GetAtt ValidateFunction.Arn
+                  - !GetAtt InventoryFunction.Arn
+                  - !GetAtt PaymentFunction.Arn
+
+  # --- Step Function State Machine ---
+  OrderProcessingStateMachine:
+    Type: AWS::StepFunctions::StateMachine
+    Properties:
+      StateMachineName: OrderProcessingWorkflowCfn
+      RoleArn: !GetAtt StepFunctionsRole.Arn
+      DefinitionString: !Sub |
+        {
+          "Comment": "A simple AWS Step Functions state machine that orchestrates an order processing workflow.",
+          "StartAt": "ValidateOrder",
+          "States": {
+            "ValidateOrder": {
+              "Type": "Task",
+              "Resource": "${ValidateFunction.Arn}",
+              "Next": "CheckInventory",
+              "Retry": [
+                {
+                  "ErrorEquals": ["States.TaskFailed"],
+                  "IntervalSeconds": 2,
+                  "MaxAttempts": 2,
+                  "BackoffRate": 2.0
+                }
+              ],
+              "Catch": [
+                {
+                  "ErrorEquals": ["OrderValidationError"],
+                  "Next": "OrderFailed"
+                }
+              ]
+            },
+            "CheckInventory": {
+              "Type": "Task",
+              "Resource": "${InventoryFunction.Arn}",
+              "Next": "ProcessPayment"
+            },
+            "ProcessPayment": {
+              "Type": "Task",
+              "Resource": "${PaymentFunction.Arn}",
+              "Next": "OrderSucceeded"
+            },
+            "OrderSucceeded": {
+              "Type": "Succeed"
+            },
+            "OrderFailed": {
+              "Type": "Fail",
+              "Cause": "Order validation failed.",
+              "Error": "ValidationError"
+            }
+          }
+        }
+
+Outputs:
+  StateMachineArn:
+    Description: ARN of the Step Functions State Machine
+    Value: !Ref OrderProcessingStateMachine

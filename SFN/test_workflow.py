@@ -1,15 +1,21 @@
 import boto3
 import json
 import time
-import subprocess
+
 import sys
 
 def get_state_machine_arn():
+    cf_client = boto3.client('cloudformation', region_name='us-east-1')
     try:
-        result = subprocess.run(['terraform', 'output', '-raw', 'state_machine_arn'], capture_output=True, text=True, check=True)
-        return result.stdout.strip()
-    except subprocess.CalledProcessError as e:
-        print(f"Error getting Terraform output: {e}")
+        response = cf_client.describe_stacks(StackName='sfn-lab-stack')
+        outputs = response['Stacks'][0]['Outputs']
+        for output in outputs:
+            if output['OutputKey'] == 'StateMachineArn':
+                return output['OutputValue']
+        print("StateMachineArn output not found in CloudFormation stack.")
+        sys.exit(1)
+    except Exception as e:
+        print(f"Error getting CloudFormation output: {e}")
         sys.exit(1)
 
 def run_test(sfn_client, state_machine_arn, input_payload, test_name):

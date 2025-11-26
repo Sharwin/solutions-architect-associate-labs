@@ -1,0 +1,92 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'SQS Lab Infrastructure'
+
+Resources:
+  # Standard DLQ
+  OrderNotificationsDLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: order-notifications-dlq
+      MessageRetentionPeriod: 1209600 # 14 days
+      Tags:
+        - Key: Environment
+          Value: lab
+        - Key: Purpose
+          Value: dlq
+
+  # Standard Queue
+  OrderNotificationsQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: order-notifications-queue
+      DelaySeconds: 0
+      MaximumMessageSize: 262144 # 256 KB
+      MessageRetentionPeriod: 345600 # 4 days
+      ReceiveMessageWaitTimeSeconds: 20 # Long polling
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt OrderNotificationsDLQ.Arn
+        maxReceiveCount: 3
+      Tags:
+        - Key: Environment
+          Value: lab
+        - Key: Purpose
+          Value: order-notifications
+
+  # FIFO DLQ
+  PaymentProcessingDLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: payment-processing-dlq.fifo
+      FifoQueue: true
+      ContentBasedDeduplication: true
+      MessageRetentionPeriod: 1209600 # 14 days
+      Tags:
+        - Key: Environment
+          Value: lab
+        - Key: Purpose
+          Value: dlq
+
+  # FIFO Queue
+  PaymentProcessingQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: payment-processing-queue.fifo
+      FifoQueue: true
+      ContentBasedDeduplication: true
+      DelaySeconds: 0
+      MaximumMessageSize: 262144 # 256 KB
+      MessageRetentionPeriod: 345600 # 4 days
+      ReceiveMessageWaitTimeSeconds: 20 # Long polling
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt PaymentProcessingDLQ.Arn
+        maxReceiveCount: 3
+      Tags:
+        - Key: Environment
+          Value: lab
+        - Key: Purpose
+          Value: payment-processing
+
+Outputs:
+  OrderNotiURLficationsQueueUrl:
+    Description: URL of the Standard Order Notifications Queue
+    Value: !Ref OrderNotificationsQueue
+
+  OrderNotificationsQueueArn:
+    Description: ARN of the Standard Order Notifications Queue
+    Value: !GetAtt OrderNotificationsQueue.Arn
+
+  PaymentProcessingQueueUrl:
+    Description:  of the FIFO Payment Processing Queue
+    Value: !Ref PaymentProcessingQueue
+
+  PaymentProcessingQueueArn:
+    Description: ARN of the FIFO Payment Processing Queue
+    Value: !GetAtt PaymentProcessingQueue.Arn
+
+  OrderNotificationsDLQUrl:
+    Description: URL of the Order Notifications DLQ
+    Value: !Ref OrderNotificationsDLQ
+
+  PaymentProcessingDLQUrl:
+    Description: URL of the Payment Processing DLQ
+    Value: !Ref PaymentProcessingDLQ

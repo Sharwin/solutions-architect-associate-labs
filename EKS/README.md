@@ -1,255 +1,153 @@
-# Amazon EKS Hands-On Lab
+# Amazon EKS Hands-On Lab (CloudFormation Edition)
 
-## 🎯 Lab Scenario
+## Overview
+This lab demonstrates how to deploy a production-ready Amazon EKS cluster using **AWS CloudFormation**. You will deploy a WordPress application with persistent storage, simulating a real-world scenario relevant to the **AWS Certified Solutions Architect - Associate (SAA-C03)** exam.
 
-**Real-World Use Case:** A company needs to deploy a containerized web application on Amazon EKS. The application must:
-- Run in a highly available, multi-AZ setup
-- Scale automatically based on demand
-- Be accessible via a public load balancer
-- Have proper IAM permissions and security
-- Support logging and monitoring
+**Key Concepts Covered:**
+-   **Infrastructure as Code (IaC)**: Using CloudFormation to provision VPC, IAM Roles, and EKS.
+-   **EKS Architecture**: Control Plane, Managed Node Groups, and Add-ons.
+-   **Persistent Storage**: Using EBS CSI Driver for `PersistentVolumeClaims` (PVC).
+-   **Networking**: VPC design for EKS (Public/Private subnets).
 
-## 📋 Prerequisites
+---
 
-- AWS CLI configured with appropriate credentials
-- Terraform >= 1.0 installed
-- kubectl installed
-- Python 3.x (for testing script)
-- AWS IAM permissions for EKS, EC2, VPC, IAM
+## Repository Structure
 
-## 🏗️ Architecture
+| File | Description |
+| :--- | :--- |
+| `eks-wordpress.yaml` | **CloudFormation Template**: Defines the VPC, IAM Roles, EKS Cluster, and Node Group. |
+| `wordpress-deployment.yaml` | **Kubernetes Manifest**: Deploys WordPress, MySQL, and LoadBalancer services. |
+| `cleanup.sh` | **Cleanup Script**: Automates the deletion of Kubernetes resources and the CloudFormation stack. |
+| `verify_cleanup.sh` | **Verification Script**: Checks that all resources (Cluster, LBs, Stack) have been successfully deleted. |
+| `README.md` | **Documentation**: This guide. |
 
-This lab deploys:
-1. **VPC** with public and private subnets across 2 AZs
-2. **EKS Cluster** with control plane logging enabled
-3. **Managed Node Group** with EC2 instances (t3.medium)
-4. **OIDC Identity Provider** for IAM integration
-5. **Sample Application** (Nginx) deployed via Kubernetes
+---
 
-## 🚀 Deployment Steps
+## Prerequisites
+-   **AWS CLI** (v2) installed and configured.
+-   **kubectl** installed.
+-   **Permissions**: Administrator access or sufficient permissions to create VPCs, IAM Roles, and EKS Clusters.
 
-### 1. Initialize Terraform
+---
+
+## Lab Architecture
+The CloudFormation template (`eks-wordpress.yaml`) provisions:
+1.  **VPC**: 10.0.0.0/16 with 2 Public and 2 Private Subnets across 2 Availability Zones.
+2.  **IAM Roles**:
+    -   `EKSClusterRole`: Permissions for the EKS Control Plane.
+    -   `NodeGroupRole`: Permissions for Worker Nodes (including `AmazonEBSCSIDriverPolicy`).
+3.  **EKS Cluster**: Version 1.28.
+4.  **EKS Add-on**: `aws-ebs-csi-driver` for managing EBS volumes.
+5.  **Managed Node Group**: 2 `t3.medium` instances in private subnets.
+
+---
+
+## Deployment Steps
+
+### 1. Create the Infrastructure
+Deploy the CloudFormation stack. This will take approximately **15-20 minutes**.
 
 ```bash
-terraform init
+aws cloudformation create-stack \
+  --stack-name eks-wordpress-lab \
+  --template-body file://eks-wordpress.yaml \
+  --capabilities CAPABILITY_NAMED_IAM
 ```
 
-### 2. Review and Customize (Optional)
+**Monitor Progress:**
+```bash
+aws cloudformation describe-stacks --stack-name eks-wordpress-lab --query "Stacks[0].StackStatus"
+```
+Wait until the status is `CREATE_COMPLETE`.
 
-Edit `terraform.tfvars` if you want to change defaults:
-- AWS region
-- Cluster name
-- Node instance types
-- Scaling configuration
-
-### 3. Plan Deployment
+### 2. Configure kubectl
+Once the stack is created, update your `kubeconfig` to interact with the cluster.
 
 ```bash
-terraform plan
+aws eks update-kubeconfig --name eks-lab-cluster-cfn --region us-east-1
 ```
 
-### 4. Deploy Infrastructure
-
+**Verify Connection:**
 ```bash
-terraform apply
-```
-
-**⏱️ Expected Time:** 15-20 minutes
-
-### 5. Configure kubectl
-
-After deployment completes, configure kubectl:
-
-```bash
-aws eks update-kubeconfig --region <your-region> --name eks-lab-cluster
-```
-
-Or use the output command:
-```bash
-terraform output -raw configure_kubectl | bash
-```
-
-### 6. Verify Cluster Access
-
-```bash
-kubectl cluster-info
 kubectl get nodes
 ```
+*Expected Output: 2 nodes in `Ready` status.*
 
-### 7. Deploy Sample Application
+### 3. Deploy WordPress
+Deploy the WordPress application, which includes a MySQL database and a LoadBalancer.
 
 ```bash
-kubectl apply -f app-deployment.yaml
+kubectl apply -f wordpress-deployment.yaml
 ```
 
-### 8. Run Automated Tests
-
-Create virtual environment and install dependencies:
+**Verify Deployment:**
 ```bash
-python3 -m venv venv
-source venv/bin/activate
-pip install requests
-python test_cluster.py
+kubectl get pods -n wordpress
+kubectl get svc -n wordpress
 ```
+*Wait for pods to be `Running` and the Service to have an `EXTERNAL-IP`.*
 
-### 9. Manual Testing
+### 4. Access the Application
+Retrieve the LoadBalancer URL:
 
-Check application status:
 ```bash
-kubectl get pods -n demo-app
-kubectl get svc -n demo-app
+kubectl get svc wordpress -n wordpress -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'
 ```
+Open the URL in your browser to see the WordPress setup page.
 
-Get LoadBalancer URL:
-```bash
-kubectl get svc nginx-service -n demo-app -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'
-```
+---
 
-Access the application:
-```bash
-curl http://<loadbalancer-url>
-```
+## 🎓 SAA-C03 Exam Tips
 
-## 📚 AWS SAA-C03 Exam Tips
+### 1. EKS Architecture
+-   **Control Plane**: Managed by AWS. You don't see or manage the master nodes. AWS charges ~$0.10/hour for the cluster.
+-   **Data Plane**: Your worker nodes (EC2 instances). In this lab, we used **Managed Node Groups**, which automates provisioning and lifecycle management of nodes.
+-   **Fargate**: You can also run EKS pods on Fargate (Serverless), removing the need to manage EC2 instances entirely.
 
-### EKS Fundamentals
-- **EKS Control Plane**: Managed by AWS, runs in AWS account (not yours)
-- **Node Groups**: Can be managed or self-managed
-- **Networking**: Uses VPC CNI plugin (default) or other CNI plugins
-- **Pricing**: $0.10/hour per cluster + EC2/node costs
+### 2. Storage & Persistence
+-   **Stateless vs. Stateful**: Web servers (like WordPress frontend) are often stateless. Databases (MySQL) are stateful.
+-   **EBS CSI Driver**: Kubernetes needs this driver to provision AWS EBS volumes dynamically.
+    -   **Exam Tip**: If your pods are stuck in `Pending` state with "PersistentVolumeClaim is not bound", check if the **EBS CSI Driver** is installed and if the Node IAM Role has the `AmazonEBSCSIDriverPolicy`.
+-   **Multi-AZ Storage**: EBS volumes are **Zonal**. A pod using an EBS volume cannot move to a different Availability Zone. For Multi-AZ storage, use **EFS**.
 
-### Key Limits
-- **Clusters per region**: 100 (soft limit, can be increased)
-- **Node groups per cluster**: 100
-- **Nodes per node group**: Unlimited (but consider practical limits)
-- **Pods per node**: Depends on instance type and CNI configuration
+### 3. Networking
+-   **VPC Design**: EKS requires subnets in at least two Availability Zones.
+-   **Public vs. Private**:
+    -   **Nodes** should generally be in **Private Subnets** for security.
+    -   **Load Balancers** for public apps go in **Public Subnets**.
+-   **Security Groups**: EKS automatically creates security groups to allow communication between the Control Plane and Nodes.
 
-### Important Configurations
-- **Cluster endpoint access**: Public, private, or both
-- **Control plane logging**: Can enable API, audit, authenticator, controller manager, scheduler logs
-- **Node group update strategy**: `maxUnavailable` or `maxSurge`
-- **Instance types**: t3.medium minimum recommended for production
+---
 
-### Security Best Practices
-- Use private subnets for nodes
-- Enable control plane logging (especially audit logs)
-- Use IAM roles for service accounts (IRSA) instead of storing credentials
-- Enable encryption at rest for EBS volumes
-- Use security groups to restrict traffic
+## Cleanup
+To avoid ongoing charges, delete the resources when finished.
 
-### Networking
-- **VPC CNI**: Assigns IP addresses from VPC subnet to pods
-- **Service types**: ClusterIP, NodePort, LoadBalancer, ExternalName
-- **LoadBalancer**: Creates Classic Load Balancer or Network Load Balancer
-- **Subnet tags**: Required for ELB integration (`kubernetes.io/role/elb`)
-
-### Scaling
-- **Horizontal Pod Autoscaler (HPA)**: Scale pods based on metrics
-- **Cluster Autoscaler**: Scale node groups based on pod scheduling needs
-- **Node group scaling**: Configure min/max/desired size
-
-### Monitoring & Logging
-- **CloudWatch Logs**: Control plane logs go here
-- **CloudWatch Container Insights**: For pod and node metrics
-- **AWS X-Ray**: For distributed tracing
-- **Prometheus**: Can be integrated for metrics
-
-### Common Exam Scenarios
-1. **Cost optimization**: Use Spot instances for non-critical workloads
-2. **High availability**: Deploy across multiple AZs
-3. **Security**: Private endpoint + VPN/Direct Connect
-4. **Compliance**: Enable audit logging for compliance requirements
-5. **Disaster recovery**: Use EKS in multiple regions
-
-## 🧹 Cleanup
-
-### Quick Cleanup
-
-Use the automated cleanup script for complete cleanup:
+### Automated Cleanup (Recommended)
+The easiest way to clean up is to use the provided script:
 
 ```bash
 ./cleanup.sh
 ```
-
 This script will:
-1. Delete all Kubernetes applications (WordPress, Nginx)
-2. Remove EBS CSI Driver
-3. Delete IAM roles
-4. Destroy Terraform infrastructure
+1.  Delete the Kubernetes namespace (removing LoadBalancers and EBS volumes).
+2.  Delete the CloudFormation stack.
+3.  Wait for completion.
 
-### Manual Cleanup
-
-**Important**: Always delete Kubernetes resources BEFORE destroying Terraform infrastructure.
-
-```bash
-# Step 1: Delete Kubernetes applications
-kubectl delete namespace wordpress
-kubectl delete -f app-deployment.yaml
-
-# Step 2: Wait for LoadBalancers to delete (2-5 minutes)
-kubectl get svc --all-namespaces | grep LoadBalancer
-
-# Step 3: Destroy Terraform infrastructure
-terraform destroy -auto-approve
-```
-
-### Verify Cleanup
-
+You can verify everything is gone using:
 ```bash
 ./verify_cleanup.sh
 ```
 
-**Note**: This will delete the EKS cluster, VPC, and all associated resources. EBS volumes and data will be permanently deleted!
+### Manual Cleanup
+If you prefer to do it manually:
 
-## 📊 Expected Costs
+1.  **Delete Kubernetes Resources**:
+    ```bash
+    kubectl delete -f wordpress-deployment.yaml
+    ```
+    *Wait for the LoadBalancer to be deleted.*
 
-- **EKS Cluster**: ~$0.10/hour (~$72/month)
-- **EC2 Instances** (2x t3.medium): ~$0.0416/hour each (~$60/month total)
-- **NAT Gateway**: ~$0.045/hour + data transfer (~$32/month)
-- **Load Balancer**: ~$0.0225/hour + data transfer (~$16/month)
-- **Total**: ~$180/month (estimate)
-
-**💡 Tip**: Always clean up resources after labs to avoid charges!
-
-## 🔍 Troubleshooting
-
-### IAM Permission Issues (Service Control Policy)
-
-**Error:** `AccessDeniedException: User: ... is not authorized to perform: eks:CreateCluster with an explicit deny in a service control policy`
-
-**Solution:** This indicates an organizational SCP is blocking EKS creation. See `PERMISSIONS.md` for details.
-
-**Workarounds:**
-1. Contact your AWS administrator to modify the SCP
-2. Use a different AWS account without SCP restrictions
-3. Request temporary access for lab purposes
-
-### kubectl connection issues
-```bash
-# Verify AWS credentials
-aws sts get-caller-identity
-
-# Re-configure kubectl
-aws eks update-kubeconfig --region <region> --name <cluster-name>
-```
-
-### Pods not starting
-```bash
-# Check pod events
-kubectl describe pod <pod-name> -n <namespace>
-
-# Check node capacity
-kubectl describe nodes
-```
-
-### LoadBalancer not getting external IP
-- Check security group rules
-- Verify subnet tags (`kubernetes.io/role/elb`)
-- Check IAM permissions for ELB service
-
-## 📖 Additional Resources
-
-- [EKS User Guide](https://docs.aws.amazon.com/eks/latest/userguide/)
-- [EKS Best Practices](https://aws.github.io/aws-eks-best-practices/)
-- [Kubernetes Documentation](https://kubernetes.io/docs/)
-
+2.  **Delete CloudFormation Stack**:
+    ```bash
+    aws cloudformation delete-stack --stack-name eks-wordpress-lab
+    ```

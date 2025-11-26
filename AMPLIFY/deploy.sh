@@ -2,9 +2,14 @@
 set -e
 
 # Configuration
-APP_ID=$(terraform output -raw amplify_app_id)
-BRANCH_NAME=$(terraform output -raw amplify_branch_name)
-AWS_REGION=$(terraform output -raw aws_region)
+STACK_NAME="AmplifyLabStack"
+AWS_REGION="us-east-1"
+
+echo "Fetching configuration from CloudFormation stack: $STACK_NAME..."
+
+APP_ID=$(aws cloudformation describe-stacks --stack-name $STACK_NAME --region $AWS_REGION --query "Stacks[0].Outputs[?OutputKey=='AmplifyAppId'].OutputValue" --output text)
+BRANCH_NAME=$(aws cloudformation describe-stacks --stack-name $STACK_NAME --region $AWS_REGION --query "Stacks[0].Outputs[?OutputKey=='AmplifyBranchName'].OutputValue" --output text)
+DOMAIN=$(aws cloudformation describe-stacks --stack-name $STACK_NAME --region $AWS_REGION --query "Stacks[0].Outputs[?OutputKey=='AmplifyDefaultDomain'].OutputValue" --output text)
 
 echo "Deploying to Amplify App: $APP_ID, Branch: $BRANCH_NAME"
 
@@ -31,4 +36,4 @@ echo "Starting deployment..."
 aws amplify start-deployment --app-id $APP_ID --branch-name $BRANCH_NAME --job-id $JOB_ID --region $AWS_REGION
 
 echo "Deployment started! Check the AWS Console or wait for it to complete."
-echo "URL: $(terraform output -raw amplify_default_domain)"
+echo "URL: $DOMAIN"
