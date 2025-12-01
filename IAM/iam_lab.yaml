@@ -1,0 +1,77 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'IAM Lab: AssumeRole Scenario for SAA-C03'
+
+Resources:
+  # 1. The S3 Bucket (The Protected Resource)
+  SecretBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub 'iam-lab-secret-bucket-${AWS::AccountId}-${AWS::Region}'
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      Tags:
+        - Key: Project
+          Value: IAMLab
+
+  # 2. The IAM Role (The "Key" to the Resource)
+  S3ReadAccessRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: S3ReadAccessRole
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: !Ref "AWS::AccountId"
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: S3ReadPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:ListBucket
+                  - s3:GetObject
+                Resource:
+                  - !GetAtt SecretBucket.Arn
+                  - !Sub '${SecretBucket.Arn}/*'
+              - Effect: Allow
+                Action:
+                  - s3:ListAllMyBuckets
+                Resource: "*"
+
+  # 3. The IAM User (The Identity)
+  IAMLabUser:
+    Type: AWS::IAM::User
+    Properties:
+      UserName: IAMLabUser
+
+  # 4. Policy for the User to Assume the Role
+  AssumeRolePolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: AllowAssumeS3Role
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action: sts:AssumeRole
+            Resource: !GetAtt S3ReadAccessRole.Arn
+      Users:
+        - !Ref IAMLabUser
+
+Outputs:
+  BucketName:
+    Description: Name of the created S3 bucket
+    Value: !Ref SecretBucket
+  UserArn:
+    Description: ARN of the IAM User
+    Value: !GetAtt IAMLabUser.Arn
+  RoleArn:
+    Description: ARN of the IAM Role
+    Value: !GetAtt S3ReadAccessRole.Arn

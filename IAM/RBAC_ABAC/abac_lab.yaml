@@ -1,0 +1,81 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'IAM Lab: RBAC vs ABAC (Attribute-Based Access Control)'
+
+Resources:
+  # --- Resources (Buckets) ---
+  RedBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub 'abac-lab-red-${AWS::AccountId}-${AWS::Region}'
+      Tags:
+        - Key: Project
+          Value: Red
+
+  BlueBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub 'abac-lab-blue-${AWS::AccountId}-${AWS::Region}'
+      Tags:
+        - Key: Project
+          Value: Blue
+
+  # --- Identities (Users) ---
+  RedUser:
+    Type: AWS::IAM::User
+    Properties:
+      UserName: RedUser
+      Tags:
+        - Key: Project
+          Value: Red
+      ManagedPolicyArns:
+        - !Ref ABACPolicy
+
+  BlueUser:
+    Type: AWS::IAM::User
+    Properties:
+      UserName: BlueUser
+      Tags:
+        - Key: Project
+          Value: Blue
+      ManagedPolicyArns:
+        - !Ref ABACPolicy
+
+  # --- The Magic ABAC Policy ---
+  ABACPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: ABACProjectPolicy
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AllowListBucket
+            Effect: Allow
+            Action:
+              - s3:ListBucket
+              - sts:GetSessionToken
+            Resource:
+              - !Sub 'arn:aws:s3:::abac-lab-*'
+          - Sid: AllowObjectAccessIfTagsMatch
+            Effect: Allow
+            Action:
+              - s3:GetObject
+              - s3:PutObject
+            Resource:
+              - !Sub 'arn:aws:s3:::abac-lab-*/*'
+            Condition:
+              StringEquals:
+                aws:PrincipalTag/Project: '${s3:ExistingObjectTag/Project}'
+          - Sid: AllowListAllBuckets
+            Effect: Allow
+            Action: s3:ListAllMyBuckets
+            Resource: '*'
+
+Outputs:
+  RedBucketName:
+    Value: !Ref RedBucket
+  BlueBucketName:
+    Value: !Ref BlueBucket
+  RedUserName:
+    Value: !Ref RedUser
+  BlueUserName:
+    Value: !Ref BlueUser
