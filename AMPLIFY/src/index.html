@@ -1,48 +1,24 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TechCorp - Future of Tech</title>
+    <title>DoomJS - TechCorp</title>
     <link rel="stylesheet" href="style.css">
+    <!-- Import Map for Three.js modules -->
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js"
+            }
+        }
+    </script>
 </head>
+
 <body>
-    <header>
-        <nav>
-            <div class="logo">TechCorp</div>
-            <ul>
-                <li><a href="#home">Home</a></li>
-                <li><a href="#services">Services</a></li>
-                <li><a href="#contact">Contact</a></li>
-            </ul>
-        </nav>
-    </header>
-    
-    <main>
-        <section id="hero">
-            <h1>Innovating for Tomorrow</h1>
-            <p>Leading the way in cloud solutions and AI integration.</p>
-            <button>Get Started</button>
-        </section>
-
-        <section id="features">
-            <div class="feature-card">
-                <h3>Cloud Native</h3>
-                <p>Scalable and resilient infrastructure.</p>
-            </div>
-            <div class="feature-card">
-                <h3>AI Powered</h3>
-                <p>Intelligent insights for your business.</p>
-            </div>
-            <div class="feature-card">
-                <h3>Secure by Design</h3>
-                <p>Enterprise-grade security protocols.</p>
-            </div>
-        </section>
-    </main>
-
-    <footer>
-        <p>&copy; 2024 TechCorp Solutions. All rights reserved.</p>
-    </footer>
+    <!-- Game container is the body itself, canvas appended by script -->
+    <script type="module" src="game.js"></script>
 </body>
+
 </html>
